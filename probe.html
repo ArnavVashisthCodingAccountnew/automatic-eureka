@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>EXUN probe link</title>
+<style>
+:root{--d:#0f380f;--m:#306230;--l:#8bac0f;--x:#9bbc0f}
+*{box-sizing:border-box}body{margin:0;background:#26232e;color:#e8e6ee;font:15px/1.5 ui-monospace,Menlo,Consolas,monospace;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+main{max-width:560px;margin:0 auto;padding:14px}h1{font-size:18px;margin:4px 0 8px}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+button,input{font:inherit;border-radius:10px;border:0;padding:10px 14px;min-height:44px}
+button{background:#d8d4e6;color:#1d1a24;font-weight:700}button:disabled{opacity:.35}button.alt{background:var(--x)}
+input{width:110px;background:#fff;color:#111;text-transform:uppercase}
+.lcd{background:var(--x);color:var(--d);border-radius:8px;border:4px solid #4a4658;padding:10px 12px;margin:10px 0}
+.r{display:grid;grid-template-columns:110px 1fr 74px;gap:8px;align-items:center}.r i{display:block;height:10px;background:var(--m);transition:width .2s}.r b{text-align:right}
+canvas{width:100%;height:110px;display:block;margin-top:8px}
+.y{color:#9be37a}.n{color:#ff9d8f}summary{cursor:pointer;font-weight:700}details{margin:10px 0}
+</style></head><body><main>
+<h1>EXUN probe link</h1><div id="cp"></div>
+<div class="row"><button id="bu">USB cable</button><button id="bb">Bluetooth</button><button id="bh">Host relay</button>
+<span class="row" style="margin:0"><input id="jc" maxlength="6" placeholder="code" autocapitalize="characters" aria-label="Relay code"><button id="bj">Join</button></span>
+<button id="br" class="alt">Replay demo</button><button id="bs">Stop</button></div>
+<div class="lcd" id="st">Pick a source. Replay works anywhere.</div>
+<div class="lcd"><div id="rd">No data yet.</div><canvas id="cv" width="640" height="220"></canvas></div>
+<div class="lcd" id="an">Analysis appears after about 12 s of data.</div>
+<div class="row"><button id="mk">Mark the event now</button></div>
+<details><summary>Which connection should I use?</summary><p>
+<b>Laptop:</b> Chrome or Edge, USB cable, press USB cable.<br>
+<b>Android phone:</b> Chrome 148 or newer, USB-OTG cable, press USB cable. If that is missing, use Bluetooth with a BLE module (HM-10, ESP32, Nano 33 BLE). HC-05 and HC-06 do not work.<br>
+<b>iPhone:</b> Safari has neither. Plug the board into the laptop, press Host relay, then on the phone press Join and type the code. Bluetooth works only inside the Bluefy browser.<br>
+The relay needs the laptop and phone online. Venue Wi-Fi that isolates devices can block it; a phone hotspot usually works. Replay always works.</p></details>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script type="module">
+import{Probe,analyze}from'./razor-probe.js';
+const $=s=>document.querySelector(s),P=new Probe(),C=Probe.caps(),NM=['PSU','Main board','Monitor driver','Case air'];
+$('#cp').innerHTML=[['USB cable',C.serial],['Bluetooth',C.ble],['Relay',C.relay]].map(([n,o])=>`<b class="${o?'y':'n'}">${n}: ${o?'ready':'not here'}</b>`).join(' &nbsp; ')+(C.secure?'':'<br>This page needs https.')+(C.ios?'<br>iPhone: use Relay (laptop reads the board).':'');
+$('#bu').disabled=!C.serial;$('#bb').disabled=!C.ble;$('#bh').disabled=$('#bj').disabled=!C.relay;
+const go=f=>async()=>{try{await f()}catch(e){if(e.name!=='NotFoundError')$('#st').textContent='Could not connect: '+e.message}};
+$('#bu').onclick=go(()=>P.serial());$('#bb').onclick=go(()=>P.ble());$('#bh').onclick=go(()=>P.host());
+$('#bj').onclick=go(()=>P.join($('#jc').value));$('#br').onclick=()=>P.replay();$('#bs').onclick=()=>P.stop();$('#mk').onclick=()=>P.setMark();
+P.addEventListener('status',e=>{$('#st').textContent=e.detail;if(/finished/.test(e.detail))report()});
+let last=0;
+P.addEventListener('frame',e=>{const f=e.detail;
+ $('#rd').innerHTML=f.T.map((t,j)=>`<div class=r><span>${NM[j]||'Sensor '+j}</span><i style="width:${Math.min(100,Math.max(2,(t-15)*3))}%"></i><b>${t.toFixed(1)}°C</b></div>`).join('')+`<div class=r><span>Current</span><i style="width:${Math.min(100,f.i*20+2)}%"></i><b>${f.i.toFixed(2)} A</b></div>`;
+ draw();if(Date.now()-last>800){last=Date.now();report()}});
+function draw(){const c=$('#cv'),g=c.getContext('2d'),F=P.frames.slice(-160),W=c.width,H=c.height,N=Math.max(F.length-1,1);g.clearRect(0,0,W,H);
+ const all=F.flatMap(f=>f.T),lo=Math.min(...all)-1,hi=Math.max(...all)+1,ci=Math.max(1,...F.map(f=>f.i));
+ const ln=(fn,col,w)=>{g.beginPath();F.forEach((f,k)=>{const x=k/N*W,y=H-4-fn(f)*(H-8);k?g.lineTo(x,y):g.moveTo(x,y)});g.strokeStyle=col;g.lineWidth=w;g.stroke()};
+ [0,1,2,3].forEach(j=>ln(f=>(f.T[j]-lo)/(hi-lo),['#306230','#0f380f','#4b7a1c','#6c8f2a'][j],3));ln(f=>f.i/ci,'#8b1e1e',2);
+ if(P.mark){const k=F.findIndex(f=>f.ts>=P.mark);if(k>=0){g.setLineDash([6,5]);g.beginPath();g.moveTo(k/N*W,0);g.lineTo(k/N*W,H);g.strokeStyle='#0f380f';g.lineWidth=2;g.stroke();g.setLineDash([])}}}
+function report(){const a=analyze(P.frames,P.mark);if(!a)return;const s=a.first,nm=s?NM[s.j]:'',d=a.dT.toFixed(1);
+ const L={none:'No heat or current excursion at the probed points. A records fault stays the simplest explanation.',
+ load:`${nm} warmed first (+${d}°C), ${a.lag==null?'':a.lag>=0?a.lag.toFixed(1)+' s after':Math.abs(a.lag).toFixed(1)+' s before'} the current rose. A physical load is confirmed on the cabinet: begin containment step 1 (preserve evidence).`,
+ heat:`${nm} warmed (+${d}°C) with no current rise. Check sensor placement and the current sensor.`,current:'Current rose but nothing warmed at the probed points. Move a sensor closer to the chips.'}[a.kind];
+ $('#an').innerHTML=`<b>Analysis, ${a.n} samples</b><br>${L}<br>${a.fromMark!=null?`First heat came ${a.fromMark.toFixed(1)} s after the event marker.<br>`:''}Confidence: ${a.conf} (signal-to-noise ${a.snr.toFixed(0)}).<br>${a.hot.map(h=>`${NM[h.j]} +${(h.peak-h.m).toFixed(1)}°C`).join(', ')||'No sensor above threshold.'}`}
+</script></main></body></html>
